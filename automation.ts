@@ -1,74 +1,39 @@
 import * as pulumi from "@pulumi/pulumi";
 import { LocalWorkspace } from "@pulumi/pulumi/automation";
-import axios from "axios";
-import * as path from "path";
-
-interface TestResult {
-    success: boolean;
-    message: string;
-    details?: any;
-}
+import { spawn } from "child_process";
 
 /**
- * Test the deployed echo server
+ * Run Vitest tests
  */
-async function testEchoServer(port: number, maxRetries: number = 10): Promise<TestResult> {
-    const url = `http://localhost:${port}`;
+async function runTests(containerPort: number): Promise<boolean> {
+    console.log(`\n🧪 Running Vitest tests against deployed resources...`);
+    console.log(`   Container port: ${containerPort}`);
     
-    console.log(`\n🧪 Testing echo server at ${url}...`);
-    
-    // Wait a bit for container to fully start
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Retry logic since container might take a moment to be ready
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            console.log(`  Attempt ${attempt}/${maxRetries}...`);
-            
-            const response = await axios.get(url, {
-                timeout: 5000,
-                headers: {
-                    'User-Agent': 'Pulumi-Test-Client'
-                }
-            });
-            
-            if (response.status === 200) {
-                console.log(`  ✅ Server responded with status ${response.status}`);
-                console.log(`  Response data:`, JSON.stringify(response.data, null, 2));
-                
-                return {
-                    success: true,
-                    message: `Echo server is working correctly on port ${port}`,
-                    details: {
-                        status: response.status,
-                        data: response.data
-                    }
-                };
+    return new Promise((resolve) => {
+        const vitestProcess = spawn('npm', ['test'], {
+            env: {
+                ...process.env,
+                CONTAINER_PORT: containerPort.toString(),
+            },
+            stdio: 'inherit',
+            shell: true,
+        });
+        
+        vitestProcess.on('close', (code) => {
+            if (code === 0) {
+                console.log('\n✅ All tests passed!');
+                resolve(true);
             } else {
-                console.log(`  ⚠️  Unexpected status code: ${response.status}`);
+                console.error(`\n❌ Tests failed with exit code ${code}`);
+                resolve(false);
             }
-        } catch (error: any) {
-            if (attempt < maxRetries) {
-                console.log(`  ⏳ Connection failed, waiting before retry...`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-            } else {
-                console.error(`  ❌ All attempts failed`);
-                return {
-                    success: false,
-                    message: `Echo server test failed after ${maxRetries} attempts`,
-                    details: {
-                        error: error.message,
-                        code: error.code
-                    }
-                };
-            }
-        }
-    }
-    
-    return {
-        success: false,
-        message: `Echo server test failed after ${maxRetries} attempts`,
-    };
+        });
+        
+        vitestProcess.on('error', (error) => {
+            console.error('\n❌ Error running tests:', error.message);
+            resolve(false);
+        });
+    });
 }
 
 /**
@@ -120,18 +85,14 @@ async function deployAndTest() {
             throw new Error("Container port not found in stack outputs");
         }
         
-        // Run tests against the deployed resources
-        const testResult = await testEchoServer(containerPort);
+        // Run Vitest tests against the deployed resources
+        const testsPassed = await runTests(containerPort);
         
-        if (testResult.success) {
-            console.log(`\n✅ ${testResult.message}`);
+        if (testsPassed) {
             console.log("\n🎉 Deployment and testing completed successfully!");
             process.exit(0);
         } else {
-            console.error(`\n❌ TEST FAILED: ${testResult.message}`);
-            if (testResult.details) {
-                console.error("Error details:", JSON.stringify(testResult.details, null, 2));
-            }
+            console.error("\n❌ Tests failed! See error details above.");
             process.exit(1);
         }
         
