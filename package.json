@@ -1,12 +1,17 @@
 {
     "name": "pulumi-tests",
     "main": "index.ts",
+    "scripts": {
+        "deploy-and-test": "ts-node automation.ts"
+    },
     "devDependencies": {
         "@types/node": "^18",
-        "typescript": "^5.0.0"
+        "typescript": "^5.0.0",
+        "ts-node": "^10.9.2"
     },
     "dependencies": {
         "@pulumi/pulumi": "^3.113.0",
-        "@pulumi/docker": "^4.0.0"
+        "@pulumi/docker": "^4.0.0",
+        "axios": "^1.6.0"
     }
 }
